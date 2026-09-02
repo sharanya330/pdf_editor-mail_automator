@@ -15,7 +15,7 @@ from pdf.ocr_editor import edit_scanned_pdf
 from pdf.validator import validate_pdf_edit
 from pdf.template_manager import register_template, get_template, load_templates
 from pdf.bulk_processor import process_bulk_pdf_edits, parse_data_file
-from pdf.email_sender import test_smtp_connection, load_dotenv_if_exists
+from pdf.email_sender import send_email_with_pdf_attachment, test_smtp_connection, load_dotenv_if_exists
 
 load_dotenv_if_exists()
 
@@ -159,7 +159,12 @@ async def api_edit_pdf(
     file: UploadFile = File(...),
     changes_json: Optional[str] = Form(None),
     instruction: Optional[str] = Form(None),
-    template_id: Optional[str] = Form(None)
+    template_id: Optional[str] = Form(None),
+    send_email: bool = Form(False),
+    recipient_email: Optional[str] = Form(None),
+    email_subject: Optional[str] = Form("Your Edited PDF Document"),
+    email_body: Optional[str] = Form("Hello,\n\nPlease find attached your edited PDF document.\n\nBest Regards,"),
+    smtp_json: Optional[str] = Form(None)
 ) -> Dict[str, Any]:
     """Edits requested text fields in uploaded PDF while preserving all non-target content."""
     file_id = str(uuid.uuid4())
@@ -250,6 +255,43 @@ async def api_edit_pdf(
                 "requires_manual_review": True
             }
 
+        email_status = None
+        if send_email:
+            if not recipient_email or "@" not in recipient_email:
+                email_status = {
+                    "success": False,
+                    "error": "Invalid or missing recipient email address.",
+                    "recipient": recipient_email or ""
+                }
+            else:
+                smtp_cfg = {}
+                if smtp_json:
+                    try:
+                        smtp_cfg = json.loads(smtp_json)
+                    except Exception:
+                        pass
+                
+                sender_email = (smtp_cfg.get("sender_email") or "").strip() or None
+                sender_password = (smtp_cfg.get("sender_password") or "").strip() or None
+                host = (smtp_cfg.get("host") or "").strip() or None
+                port_raw = smtp_cfg.get("port", 0)
+                try:
+                    port = int(port_raw) if port_raw else None
+                except Exception:
+                    port = None
+
+                email_res = send_email_with_pdf_attachment(
+                    to_email=recipient_email.strip(),
+                    subject=email_subject or "Your Edited PDF Document",
+                    body_text=email_body or "Please find attached your edited PDF document.",
+                    attachment_pdf_path=output_path,
+                    smtp_host=host,
+                    smtp_port=port,
+                    sender_email=sender_email,
+                    sender_password=sender_password
+                )
+                email_status = email_res
+
         background_tasks.add_task(cleanup_file, input_path)
 
         return {
@@ -257,7 +299,8 @@ async def api_edit_pdf(
             "mode": pdf_mode,
             "output_file": output_filename,
             "download_url": f"/pdf/download/{output_filename}",
-            "validation": validation
+            "validation": validation,
+            "email_status": email_status
         }
 
     except HTTPException:
@@ -322,6 +365,20 @@ async def api_edit_pdf_bulk(
     _write_job(bulk_id, {"status": "processing", "job_id": bulk_id})
 
     def _run_bulk():
+        def _on_progress(prog_data: Dict[str, Any]):
+            _write_job(bulk_id, {
+                "status": "processing",
+                "job_id": bulk_id,
+                "current_row": prog_data.get("current_row", 0),
+                "total_rows": prog_data.get("total_rows", 0),
+                "progress_percent": prog_data.get("progress_percent", 0),
+                "status_step": prog_data.get("status_step", ""),
+                "next_step": prog_data.get("next_step", ""),
+                "sent_emails_count": prog_data.get("sent_emails_count", 0),
+                "failed_emails_count": prog_data.get("failed_emails_count", 0),
+                "generated_count": prog_data.get("generated_count", 0)
+            })
+
         try:
             res = process_bulk_pdf_edits(
                 pdf_temp_path,
@@ -332,7 +389,8 @@ async def api_edit_pdf_bulk(
                 email_column_name=email_column,
                 email_subject=email_subject or "Your Internship Offer Letter",
                 email_body=email_body or "Dear Candidate,\n\nPlease find attached your offer letter.",
-                smtp_config=smtp_config
+                smtp_config=smtp_config,
+                progress_callback=_on_progress
             )
             if not res.get("success"):
                 _write_job(bulk_id, {"status": "failed", "job_id": bulk_id, "error": res.get("message", "Bulk generation failed.")})
