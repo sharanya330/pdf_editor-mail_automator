@@ -1,6 +1,6 @@
 """Automated Email Sender Module.
 
-Dispatches individual and bulk automated emails with attached customized PDFs via SMTP or HTTP Email API (Resend / Brevo / SendGrid).
+Dispatches individual and bulk automated emails with attached customized PDFs via SMTP or Brevo HTTP Email API.
 Prevents '[Errno 101] Network is unreachable' on cloud hosts (e.g. Railway) where raw SMTP ports are blocked.
 """
 
@@ -70,43 +70,6 @@ def _create_ssl_context() -> ssl.SSLContext:
         return ssl._create_unverified_context()
 
 
-def _send_via_resend_api(api_key: str, from_email: str, to_email: str, subject: str, body_text: str, pdf_path: str) -> Dict[str, Any]:
-    """Dispatches email using Resend HTTP API (Port 443 HTTPS - Never blocked by cloud firewalls)."""
-    try:
-        attachments = []
-        if pdf_path and os.path.exists(pdf_path):
-            filename = os.path.basename(pdf_path)
-            with open(pdf_path, "rb") as f:
-                b64_content = base64.b64encode(f.read()).decode("utf-8")
-            attachments.append({
-                "filename": filename,
-                "content": b64_content
-            })
-
-        payload = {
-            "from": from_email or "onboarding@resend.dev",
-            "to": [to_email],
-            "subject": subject,
-            "text": body_text,
-            "attachments": attachments
-        }
-
-        req = urllib.request.Request(
-            "https://api.resend.com/emails",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            return {"success": True, "recipient": to_email, "id": data.get("id")}
-    except Exception as e:
-        return {"success": False, "error": f"Resend API Error: {str(e)}", "recipient": to_email}
-
-
 def _send_via_brevo_api(api_key: str, from_email: str, to_email: str, subject: str, body_text: str, pdf_path: str) -> Dict[str, Any]:
     """Dispatches email using Brevo (Sendinblue) HTTP API (Port 443 HTTPS)."""
     try:
@@ -122,12 +85,13 @@ def _send_via_brevo_api(api_key: str, from_email: str, to_email: str, subject: s
 
         sender_name = "HR Team"
         payload = {
-            "sender": {"email": from_email or "hr@support.algoryx.in", "name": sender_name},
-            "to": [{"email": to_email}],
+            "sender": {"email": (from_email or "").strip(), "name": sender_name},
+            "to": [{"email": (to_email or "").strip()}],
             "subject": subject,
-            "textContent": body_text,
-            "attachment": attachments
+            "textContent": body_text
         }
+        if attachments:
+            payload["attachment"] = attachments
 
         req = urllib.request.Request(
             "https://api.brevo.com/v3/smtp/email",
@@ -138,49 +102,40 @@ def _send_via_brevo_api(api_key: str, from_email: str, to_email: str, subject: s
             },
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+
+        try:
+            ctx = _create_ssl_context()
+            resp = urllib.request.urlopen(req, timeout=15, context=ctx)
+        except urllib.error.HTTPError as http_err:
+            err_body = http_err.read().decode("utf-8", errors="ignore")
+            try:
+                err_json = json.loads(err_body)
+                msg = err_json.get("message") or err_json.get("code") or err_body
+            except Exception:
+                msg = err_body
+            return {"success": False, "error": f"Brevo API Error ({http_err.code}): {msg}", "recipient": to_email}
+        except Exception as ssl_err:
+            err_str = str(ssl_err)
+            if "CERTIFICATE_VERIFY_FAILED" in err_str or "certificate verify failed" in err_str.lower() or "ssl" in err_str.lower():
+                unverified_ctx = ssl._create_unverified_context()
+                try:
+                    resp = urllib.request.urlopen(req, timeout=15, context=unverified_ctx)
+                except urllib.error.HTTPError as http_err:
+                    err_body = http_err.read().decode("utf-8", errors="ignore")
+                    try:
+                        err_json = json.loads(err_body)
+                        msg = err_json.get("message") or err_json.get("code") or err_body
+                    except Exception:
+                        msg = err_body
+                    return {"success": False, "error": f"Brevo API Error ({http_err.code}): {msg}", "recipient": to_email}
+            else:
+                raise ssl_err
+
+        with resp:
             data = json.loads(resp.read().decode("utf-8"))
             return {"success": True, "recipient": to_email, "id": data.get("messageId")}
     except Exception as e:
         return {"success": False, "error": f"Brevo API Error: {str(e)}", "recipient": to_email}
-
-
-def _send_via_sendgrid_api(api_key: str, from_email: str, to_email: str, subject: str, body_text: str, pdf_path: str) -> Dict[str, Any]:
-    """Dispatches email using SendGrid v3 Mail API (Port 443 HTTPS)."""
-    try:
-        attachments = []
-        if pdf_path and os.path.exists(pdf_path):
-            filename = os.path.basename(pdf_path)
-            with open(pdf_path, "rb") as f:
-                b64_content = base64.b64encode(f.read()).decode("utf-8")
-            attachments.append({
-                "content": b64_content,
-                "type": "application/pdf",
-                "filename": filename,
-                "disposition": "attachment"
-            })
-
-        payload = {
-            "personalizations": [{"to": [{"email": to_email}]}],
-            "from": {"email": from_email or "hr@support.algoryx.in", "name": "HR Team"},
-            "subject": subject,
-            "content": [{"type": "text/plain", "value": body_text}],
-            "attachments": attachments
-        }
-
-        req = urllib.request.Request(
-            "https://api.sendgrid.com/v3/mail/send",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return {"success": True, "recipient": to_email}
-    except Exception as e:
-        return {"success": False, "error": f"SendGrid API Error: {str(e)}", "recipient": to_email}
 
 
 def _connect_smtp(smtp_host: str, smtp_port: int, timeout: int = 20) -> smtplib.SMTP:
@@ -232,7 +187,7 @@ def _format_auth_error(err_msg: str, smtp_host: str, sender_email: str) -> str:
     if "101" in err_msg or "unreachable" in err_msg.lower() or "111" in err_msg or "refused" in err_msg.lower() or "timed out" in err_msg.lower():
         return (
             f"Connection Failed ({smtp_host}): Outbound SMTP port blocked by network/firewall. "
-            "Tip: Use an HTTP API Key (Resend 're_...', Brevo 'xkeysib-...', or SendGrid 'SG...') as password for 100% cloud dispatch over Port 443."
+            "Tip: Use a Brevo HTTP API Key ('xkeysib-...') as password for 100% cloud dispatch over Port 443."
         )
 
     return f"SMTP Connection/Authentication Error ({smtp_host}): {err_msg}"
@@ -248,12 +203,12 @@ def test_smtp_connection(
     """Tests connection and authentication to the SMTP server or HTTP Mail API and sends a test email."""
     load_dotenv_if_exists()
 
-    if not sender_email:
+    if sender_email is None:
         sender_email = os.environ.get("SMTP_SENDER_EMAIL", "").strip()
     else:
         sender_email = sender_email.strip()
 
-    if not sender_password:
+    if sender_password is None:
         sender_password = os.environ.get("SMTP_SENDER_PASSWORD", "").strip()
     else:
         sender_password = sender_password.strip()
@@ -296,27 +251,11 @@ def test_smtp_connection(
 
     target_email = test_recipient or "test@algoryx.in"
 
-    # Resend API Key check
-    if sender_password.startswith("re_"):
-        res = _send_via_resend_api(sender_password, sender_email, target_email, "⚡ SMTP Test - Connection & Delivery Verified", f"This is an automated test email sent to {target_email} from PDF Editor engine.", "")
-        if res.get("success"):
-            return {"success": True, "message": f"Successfully authenticated & dispatched test email to {target_email} via Resend HTTP API!"}
-        else:
-            return {"success": False, "error": res.get("error")}
-
     # Brevo API Key check
     if sender_password.startswith("xkeysib-"):
         res = _send_via_brevo_api(sender_password, sender_email, target_email, "⚡ SMTP Test - Connection & Delivery Verified", f"This is an automated test email sent to {target_email} from PDF Editor engine.", "")
         if res.get("success"):
             return {"success": True, "message": f"Successfully authenticated & dispatched test email to {target_email} via Brevo HTTP API!"}
-        else:
-            return {"success": False, "error": res.get("error")}
-
-    # SendGrid API Key check
-    if sender_password.startswith("SG."):
-        res = _send_via_sendgrid_api(sender_password, sender_email, target_email, "⚡ SMTP Test - Connection & Delivery Verified", f"This is an automated test email sent to {target_email} from PDF Editor engine.", "")
-        if res.get("success"):
-            return {"success": True, "message": f"Successfully authenticated & dispatched test email to {target_email} via SendGrid HTTP API!"}
         else:
             return {"success": False, "error": res.get("error")}
 
@@ -381,12 +320,12 @@ def send_email_with_pdf_attachment(
     """Sends an individual automated email with attached PDF to recipient using SMTP or HTTP Mail API."""
     load_dotenv_if_exists()
 
-    if not sender_email:
+    if sender_email is None:
         sender_email = os.environ.get("SMTP_SENDER_EMAIL", "").strip()
     else:
         sender_email = sender_email.strip()
 
-    if not sender_password:
+    if sender_password is None:
         sender_password = os.environ.get("SMTP_SENDER_PASSWORD", "").strip()
     else:
         sender_password = sender_password.strip()
@@ -411,15 +350,9 @@ def send_email_with_pdf_attachment(
         }
 
 
-    # HTTP API dispatch if API key supplied
-    if sender_password.startswith("re_"):
-        return _send_via_resend_api(sender_password, sender_email, to_email, subject, body_text, attachment_pdf_path)
-
+    # Brevo HTTP API dispatch if API key supplied
     if sender_password.startswith("xkeysib-"):
         return _send_via_brevo_api(sender_password, sender_email, to_email, subject, body_text, attachment_pdf_path)
-
-    if sender_password.startswith("SG."):
-        return _send_via_sendgrid_api(sender_password, sender_email, to_email, subject, body_text, attachment_pdf_path)
 
     # Standard SMTP dispatch
     msg = MIMEMultipart()
@@ -475,7 +408,7 @@ class SMTPBatchSender:
         self.sender_email = sender_email
         self.sender_password = sender_password
         self.server: Optional[smtplib.SMTP] = None
-        self.is_api = sender_password.startswith(("re_", "xkeysib-", "SG."))
+        self.is_api = sender_password.startswith("xkeysib-")
 
     def connect(self) -> Dict[str, Any]:
         """Pre-flight connection and authentication test."""

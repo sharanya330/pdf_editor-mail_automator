@@ -8,7 +8,7 @@ import os
 import re
 import csv
 import zipfile
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 import openpyxl
 
 from pdf.analyzer import analyze_pdf
@@ -81,7 +81,8 @@ def process_bulk_pdf_edits(
     email_column_name: Optional[str] = None,
     email_subject: str = "Your Document Offer Letter",
     email_body: str = "Dear Candidate,\n\nPlease find attached your offer letter PDF.\n\nBest Regards,\nHR Team",
-    smtp_config: Optional[Dict[str, Any]] = None
+    smtp_config: Optional[Dict[str, Any]] = None,
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
 ) -> Dict[str, Any]:
     """Generates bulk PDFs for each row in the data file using optional field mappings and sends emails if enabled."""
     load_dotenv_if_exists()
@@ -155,9 +156,24 @@ def process_bulk_pdf_edits(
     # Analyze base template once
     template_analysis = analyze_pdf(template_pdf_path)
 
+    total_rows = len(data_rows)
     try:
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             for idx, row_dict in enumerate(data_rows, start=1):
+                recipient_email_val = _find_col_case_insensitive(row_dict, email_column_name) if (send_email_toggle and email_column_name) else None
+                recip_label = f" ({recipient_email_val})" if recipient_email_val else ""
+
+                if progress_callback:
+                    progress_callback({
+                        "current_row": idx,
+                        "total_rows": total_rows,
+                        "progress_percent": int(((idx - 0.5) / total_rows) * 100),
+                        "status_step": f"Generating PDF & email for candidate {idx} of {total_rows}{recip_label}",
+                        "next_step": f"Row {idx + 1}: {data_rows[idx].get('name', 'Next candidate')}" if idx < total_rows else "Finalizing ZIP package",
+                        "sent_emails_count": sent_emails_count,
+                        "failed_emails_count": failed_emails_count,
+                        "generated_count": len(generated_pdfs)
+                    })
                 # Construct changes map using field_mappings if supplied
                 row_changes = {}
                 if field_mappings:
@@ -256,6 +272,18 @@ def process_bulk_pdf_edits(
                         "row": idx,
                         "changes": row_changes,
                         "reason": "PDF native text mutation failed."
+                    })
+
+                if progress_callback:
+                    progress_callback({
+                        "current_row": idx,
+                        "total_rows": total_rows,
+                        "progress_percent": int((idx / total_rows) * 100),
+                        "status_step": f"Completed candidate {idx} of {total_rows}{recip_label}",
+                        "next_step": f"Row {idx + 1}: {data_rows[idx].get('name', 'Next candidate')}" if idx < total_rows else "Finalizing ZIP archive",
+                        "sent_emails_count": sent_emails_count,
+                        "failed_emails_count": failed_emails_count,
+                        "generated_count": len(generated_pdfs)
                     })
     finally:
         if batch_sender:
