@@ -117,7 +117,12 @@ def process_bulk_jpeg_edits(
 
             for map_item in mapping_config:
                 col_name = map_item.get("excel_column")
-                cell_value = str(row.get(col_name, "")).strip() if col_name else ""
+                if col_name and col_name in row:
+                    cell_value = str(row.get(col_name, "")).strip()
+                elif col_name:
+                    cell_value = str(col_name).strip()
+                else:
+                    cell_value = ""
 
                 is_free_space = map_item.get("is_free_space", False)
                 if is_free_space:
