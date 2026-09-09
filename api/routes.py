@@ -3,6 +3,7 @@
 import os
 import uuid
 import json
+import shutil
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
@@ -445,7 +446,15 @@ async def api_download_pdf(file_name: str):
     """Serves modified output PDF for download."""
     file_path = os.path.join(TEMP_DIR, file_name)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found.")
+        found_path = None
+        for root, _, files in os.walk(TEMP_DIR):
+            if file_name in files:
+                found_path = os.path.join(root, file_name)
+                break
+        if found_path:
+            file_path = found_path
+        else:
+            raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(file_path, media_type="application/pdf", filename=file_name)
 
 
@@ -454,7 +463,15 @@ async def api_download_zip(zip_name: str):
     """Serves generated bulk ZIP archive for download."""
     file_path = os.path.join(TEMP_DIR, zip_name)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="ZIP file not found.")
+        found_path = None
+        for root, _, files in os.walk(TEMP_DIR):
+            if zip_name in files:
+                found_path = os.path.join(root, zip_name)
+                break
+        if found_path:
+            file_path = found_path
+        else:
+            raise HTTPException(status_code=404, detail="ZIP file not found.")
     return FileResponse(file_path, media_type="application/zip", filename=zip_name)
 
 
@@ -646,6 +663,15 @@ async def api_edit_jpeg_bulk(
                 return
 
             zip_filename = res.get("zip_file")
+            if zip_filename:
+                zip_src_path = res.get("zip_path") or res.get("zip_filepath") or os.path.join(bulk_out_dir, zip_filename)
+                zip_dest_path = os.path.join(TEMP_DIR, zip_filename)
+                if os.path.exists(zip_src_path) and zip_src_path != zip_dest_path:
+                    try:
+                        shutil.move(zip_src_path, zip_dest_path)
+                    except Exception:
+                        shutil.copy2(zip_src_path, zip_dest_path)
+
             _write_job(bulk_id, {
                 "status": "done",
                 "job_id": bulk_id,
@@ -684,7 +710,16 @@ async def api_download_jpeg(file_name: str):
     """Serves modified JPEG file or ZIP archive for download."""
     file_path = os.path.join(TEMP_DIR, file_name)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found.")
+        # Search subdirectories inside TEMP_DIR as fallback
+        found_path = None
+        for root, _, files in os.walk(TEMP_DIR):
+            if file_name in files:
+                found_path = os.path.join(root, file_name)
+                break
+        if found_path:
+            file_path = found_path
+        else:
+            raise HTTPException(status_code=404, detail=f"File '{file_name}' not found.")
 
     media_type = "application/zip" if file_name.endswith(".zip") else "image/jpeg"
     return FileResponse(file_path, media_type=media_type, filename=file_name)

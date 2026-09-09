@@ -223,6 +223,8 @@ def process_bulk_jpeg_edits(
         "failed_emails_count": failed_emails_count,
         "email_errors": email_errors,
         "zip_file": zip_filename,
+        "zip_path": zip_filepath,
+        "zip_filepath": zip_filepath,
         "zip_download_url": f"/jpeg/download/{zip_filename}",
         "errors": errors
     }
