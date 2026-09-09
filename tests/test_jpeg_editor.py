@@ -127,3 +127,22 @@ def test_bulk_jpeg_processor(tmp_path):
     assert res["generated_count"] == 2
     assert "zip_file" in res
     assert os.path.exists(os.path.join(str(out_dir), res["zip_file"]))
+
+
+def test_bulk_jpeg_email_preflight_missing_column(tmp_path):
+    """Tests pre-flight validation error when email is enabled without recipient email column."""
+    csv_path = tmp_path / "candidates.csv"
+    csv_path.write_text("Name,Email\nTest Candidate,test@example.com\n", encoding="utf-8")
+    out_dir = tmp_path / "bulk_out_email"
+
+    res = process_bulk_jpeg_edits(
+        jpeg_template_path=SAMPLE_JPEG_PATH,
+        data_file_path=str(csv_path),
+        output_dir=str(out_dir),
+        mapping_config=[],
+        send_email_toggle=True,
+        email_column_name=None
+    )
+    assert res["success"] is False
+    assert "no recipient email column" in res["message"]
+

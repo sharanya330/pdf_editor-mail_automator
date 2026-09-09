@@ -1283,15 +1283,51 @@ document.addEventListener('DOMContentLoaded', () => {
                             clearInterval(pollInterval);
                             executeJpegBulkBtn.disabled = false;
 
-                            if (bulkProgressContainer) bulkProgressContainer.style.display = 'none';
-                            if (bulkResultsBox) bulkResultsBox.style.display = 'block';
-                            if (downloadZipBtn) {
-                                downloadZipBtn.href = statusData.download_url;
-                                downloadZipBtn.textContent = 'Download All JPEGs (.ZIP Archive)';
-                            }
+                            if (bulkProgressBarFill) bulkProgressBarFill.style.width = '100%';
+                            if (bulkProgressPercentBadge) bulkProgressPercentBadge.textContent = '100%';
+                            if (bulkStepText) bulkStepText.textContent = '✅ All candidate JPEGs generated & dispatches completed!';
 
-                            if (bulkSummaryText) bulkSummaryText.innerHTML = `Successfully generated <strong>${statusData.generated_count}</strong> of ${statusData.total_rows} customized JPEGs!`;
-                            showStatus('✅ Bulk JPEGs generated and ready for download!', 'success');
+                            setTimeout(() => {
+                                if (bulkProgressContainer) bulkProgressContainer.style.display = 'none';
+                                if (bulkResultsBox) bulkResultsBox.style.display = 'block';
+                                if (downloadZipBtn) {
+                                    downloadZipBtn.href = statusData.download_url;
+                                    downloadZipBtn.textContent = 'Download All JPEGs (.ZIP Archive)';
+                                }
+
+                                let summary = `Successfully generated <strong>${statusData.generated_count}</strong> of ${statusData.total_rows} customized JPEGs!`;
+                                if (jpegSendEmailToggle && jpegSendEmailToggle.checked) {
+                                    if (statusData.sent_emails_count > 0) {
+                                        summary += `<br>✅ Dispatched <strong>${statusData.sent_emails_count}</strong> individual emails successfully!`;
+                                    }
+                                    if (statusData.failed_emails_count > 0) {
+                                        summary += `<br>❌ <strong>${statusData.failed_emails_count}</strong> email(s) failed:`;
+                                        (statusData.email_errors || statusData.errors || []).forEach(e => {
+                                            if (typeof e === 'object' && e.error) {
+                                                summary += `<br>&nbsp;&nbsp;• Row ${e.row} (${e.recipient}): ${e.error}`;
+                                            } else {
+                                                summary += `<br>&nbsp;&nbsp;• ${e}`;
+                                            }
+                                        });
+                                    }
+                                    if (!statusData.sent_emails_count && !statusData.failed_emails_count) {
+                                        summary += `<br>⚠️ No emails were sent. Check that the email column name matches your Excel/CSV header.`;
+                                    }
+
+                                    if (statusData.failed_emails_count > 0 && statusData.sent_emails_count === 0) {
+                                        showStatus(`⚠️ Generated ${statusData.generated_count} JPEGs, but ALL ${statusData.failed_emails_count} emails failed to send!`, 'danger');
+                                    } else if (statusData.failed_emails_count > 0) {
+                                        showStatus(`⚠️ Generated ${statusData.generated_count} JPEGs: ${statusData.sent_emails_count} emails sent, ${statusData.failed_emails_count} failed.`, 'warning');
+                                    } else if (statusData.sent_emails_count > 0) {
+                                        showStatus(`✅ ${statusData.generated_count} JPEGs generated & ${statusData.sent_emails_count} emails dispatched successfully!`, 'success');
+                                    } else {
+                                        showStatus('✅ Bulk JPEGs generated and ready for download!', 'success');
+                                    }
+                                } else {
+                                    showStatus('✅ Bulk JPEGs generated and ready for download!', 'success');
+                                }
+                                if (bulkSummaryText) bulkSummaryText.innerHTML = summary;
+                            }, 1000);
                         } else if (statusData.status === 'failed') {
                             clearInterval(pollInterval);
                             executeJpegBulkBtn.disabled = false;

@@ -633,6 +633,7 @@ async def api_edit_jpeg_bulk(
                 data_file_path=data_temp_path,
                 output_dir=bulk_out_dir,
                 mapping_config=mappings,
+                send_email_toggle=send_email,
                 email_column_name=email_column if send_email else None,
                 email_subject=email_subject or "Your Document",
                 email_body=email_body or "Please find attached your customized document.",
@@ -654,6 +655,7 @@ async def api_edit_jpeg_bulk(
                 "generated_count": res.get("generated_count", 0),
                 "sent_emails_count": res.get("sent_emails_count", 0),
                 "failed_emails_count": res.get("failed_emails_count", 0),
+                "email_errors": res.get("email_errors", []),
                 "errors": res.get("errors", [])
             })
         except Exception as e:

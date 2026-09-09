@@ -13,7 +13,7 @@ import uuid
 import json
 from jpeg.editor import edit_jpeg
 from pdf.email_sender import SMTPBatchSender, load_dotenv_if_exists
-from pdf.bulk_processor import parse_data_file
+from pdf.bulk_processor import parse_data_file, _find_col_case_insensitive
 
 load_dotenv_if_exists()
 
@@ -23,9 +23,10 @@ def process_bulk_jpeg_edits(
     data_file_path: str,
     output_dir: str,
     mapping_config: List[Dict[str, Any]],
+    send_email_toggle: bool = False,
     email_column_name: Optional[str] = None,
     email_subject: Optional[str] = "Your Document",
-    email_body: Optional[str] = "Please find attached your document.",
+    email_body: Optional[str] = "Please find attached your customized document.",
     smtp_config: Optional[Dict[str, Any]] = None,
     progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
 ) -> Dict[str, Any]:
@@ -35,11 +36,8 @@ def process_bulk_jpeg_edits(
         jpeg_template_path: Path to base JPEG template image.
         data_file_path: Path to CSV or Excel file containing candidate data.
         output_dir: Output directory path to save generated JPEG files.
-        mapping_config: List of mappings, e.g.:
-          [
-            {"field": "Name", "excel_column": "Full_Name", "is_free_space": False},
-            {"x": 150, "y": 300, "excel_column": "Issue_Date", "is_free_space": True, "font_size": 18, "font_color": "#000000"}
-          ]
+        mapping_config: List of mappings.
+        send_email_toggle: Toggle whether automated email dispatch is enabled.
         email_column_name: Optional Excel column containing recipient emails.
         email_subject: Email subject text.
         email_body: Email body text.
@@ -49,6 +47,8 @@ def process_bulk_jpeg_edits(
     Returns:
         Summary dict containing counts, errors, output zip path, and email stats.
     """
+    load_dotenv_if_exists()
+
     if not os.path.exists(jpeg_template_path):
         return {"success": False, "message": f"Base JPEG template image not found: {jpeg_template_path}"}
 
@@ -66,6 +66,49 @@ def process_bulk_jpeg_edits(
     os.makedirs(output_dir, exist_ok=True)
     total_rows = len(data_rows)
 
+    smtp_cfg = smtp_config or {}
+    sender_email = (smtp_cfg.get("sender_email") or "").strip() or os.environ.get("SMTP_SENDER_EMAIL", "").strip()
+    sender_password = (smtp_cfg.get("sender_password") or "").strip() or os.environ.get("SMTP_SENDER_PASSWORD", "").strip()
+    host = (smtp_cfg.get("host") or "").strip() or os.environ.get("SMTP_HOST", "smtp.hostinger.com").strip()
+    port_raw = smtp_cfg.get("port", 0)
+    try:
+        port = int(port_raw or os.environ.get("SMTP_PORT", 0) or 465)
+    except Exception:
+        port = 465
+
+    batch_sender: Optional[SMTPBatchSender] = None
+    email_errors: List[Dict[str, Any]] = []
+
+    # Pre-flight check: if email is enabled, verify credentials and test connection BEFORE processing
+    if send_email_toggle:
+        if not sender_email or not sender_password:
+            return {
+                "success": False,
+                "message": (
+                    "Email dispatch is enabled but SMTP credentials are missing. "
+                    "Please fill in Sender Email and Password in the Email Dispatch section, "
+                    "or set SMTP_SENDER_EMAIL and SMTP_SENDER_PASSWORD in your .env file."
+                )
+            }
+        if not email_column_name:
+            return {
+                "success": False,
+                "message": "Email dispatch is enabled but no recipient email column was selected."
+            }
+
+        batch_sender = SMTPBatchSender(
+            host=host,
+            port=port,
+            sender_email=sender_email,
+            sender_password=sender_password
+        )
+        preflight = batch_sender.connect()
+        if not preflight.get("success"):
+            return {
+                "success": False,
+                "message": f"Pre-flight Email Verification Failed: {preflight.get('error')}. Please check your SMTP credentials."
+            }
+
     def notify_progress(row_idx: int, step_name: str, next_name: str, sent_emails: int = 0, failed_emails: int = 0):
         if progress_callback:
             pct = int((row_idx / total_rows) * 100) if total_rows > 0 else 0
@@ -82,29 +125,6 @@ def process_bulk_jpeg_edits(
 
     notify_progress(0, "Initializing bulk JPEG generation...", "Processing row 1 data...")
 
-    # Setup Batch Email Sender if enabled
-    batch_sender: Optional[SMTPBatchSender] = None
-    if smtp_config and email_column_name:
-        sender_email = (smtp_config.get("sender_email") or "").strip() or None
-        sender_password = (smtp_config.get("sender_password") or "").strip() or None
-        host = (smtp_config.get("host") or "").strip() or None
-        port_raw = smtp_config.get("port", 0)
-        try:
-            port = int(port_raw) if port_raw else 587
-        except Exception:
-            port = 587
-
-        if sender_email and sender_password:
-            batch_sender = SMTPBatchSender(
-                host=host or "smtp.hostinger.com",
-                port=port,
-                sender_email=sender_email,
-                sender_password=sender_password
-            )
-            conn_res = batch_sender.connect()
-            if not conn_res.get("success"):
-                return {"success": False, "message": f"Email authentication failed: {conn_res.get('error')}"}
-
     processed_files: List[str] = []
     sent_emails_count = 0
     failed_emails_count = 0
@@ -117,12 +137,13 @@ def process_bulk_jpeg_edits(
 
             for map_item in mapping_config:
                 col_name = map_item.get("excel_column")
-                if col_name and col_name in row:
-                    cell_value = str(row.get(col_name, "")).strip()
-                elif col_name:
-                    cell_value = str(col_name).strip()
-                else:
-                    cell_value = ""
+                cell_value = ""
+                if col_name:
+                    found_val = _find_col_case_insensitive(row, col_name)
+                    if found_val is not None:
+                        cell_value = str(found_val).strip()
+                    else:
+                        cell_value = str(col_name).strip()
 
                 is_free_space = map_item.get("is_free_space", False)
                 if is_free_space:
@@ -144,7 +165,7 @@ def process_bulk_jpeg_edits(
                         })
 
             # Create file name based on candidate name or index
-            cand_name = str(row.get("Name") or row.get("Full_Name") or row.get("Candidate_Name") or f"candidate_{idx}").strip()
+            cand_name = str(_find_col_case_insensitive(row, "Name") or _find_col_case_insensitive(row, "Full_Name") or _find_col_case_insensitive(row, "Candidate_Name") or f"candidate_{idx}").strip()
             safe_name = "".join(c for c in cand_name if c.isalnum() or c in (" ", "_", "-")).replace(" ", "_")
             out_filename = f"edited_{safe_name}_{idx}.jpg"
             out_filepath = os.path.join(output_dir, out_filename)
@@ -157,20 +178,27 @@ def process_bulk_jpeg_edits(
             processed_files.append(out_filepath)
 
             # Send Email if configured
-            if batch_sender and email_column_name:
-                recipient = str(row.get(email_column_name, "")).strip()
+            if send_email_toggle and batch_sender and email_column_name:
+                recipient = _find_col_case_insensitive(row, email_column_name)
                 if recipient and "@" in recipient:
                     mail_res = batch_sender.send_one(
-                        to_email=recipient,
+                        to_email=recipient.strip(),
                         subject=email_subject or "Your Document",
-                        body_text=email_body or "Please find attached your edited JPEG document.",
-                        pdf_path=out_filepath  # Attachment works for JPEG via updated email_sender
+                        body_text=email_body or "Please find attached your customized JPEG document.",
+                        pdf_path=out_filepath
                     )
                     if mail_res.get("success"):
                         sent_emails_count += 1
                     else:
                         failed_emails_count += 1
-                        errors.append(f"Row {idx} email failed ({recipient}): {mail_res.get('error')}")
+                        err_msg = mail_res.get("error", "Unknown email error")
+                        email_errors.append({"row": idx, "recipient": recipient, "error": err_msg})
+                        errors.append(f"Row {idx} email failed ({recipient}): {err_msg}")
+                else:
+                    failed_emails_count += 1
+                    err_msg = f"No valid email address found in column '{email_column_name}' for row {idx}."
+                    email_errors.append({"row": idx, "recipient": recipient or "(empty)", "error": err_msg})
+                    errors.append(f"Row {idx} email failed: {err_msg}")
 
             next_label = f"Processing row {idx+1}..." if idx < total_rows else "Finalizing zip archive..."
             notify_progress(idx, f"Generated JPEG {idx}/{total_rows}", next_label, sent_emails_count, failed_emails_count)
@@ -188,11 +216,12 @@ def process_bulk_jpeg_edits(
             zipf.write(fpath, arcname=os.path.basename(fpath))
 
     return {
-        "success": True,
+        "success": len(processed_files) > 0,
         "total_rows": total_rows,
         "generated_count": len(processed_files),
         "sent_emails_count": sent_emails_count,
         "failed_emails_count": failed_emails_count,
+        "email_errors": email_errors,
         "zip_file": zip_filename,
         "zip_download_url": f"/jpeg/download/{zip_filename}",
         "errors": errors
