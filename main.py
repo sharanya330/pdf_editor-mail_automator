@@ -8,12 +8,12 @@ from pdf.email_sender import load_dotenv_if_exists
 
 load_dotenv_if_exists()
 
-from api.routes import router as pdf_router
+from api.routes import router as pdf_router, jpeg_router
 
 app = FastAPI(
 
-    title="High-Fidelity Automated PDF Text-Field Editor",
-    description="Deterministic PDF text editor that preserves all non-target content, images, logos, vectors, and geometry.",
+    title="High-Fidelity Automated PDF & JPEG Text-Field Editor",
+    description="Deterministic PDF and JPEG text editor that preserves all non-target content, images, logos, and layout geometry.",
     version="1.0.0"
 )
 
@@ -29,6 +29,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Include API routes
 app.include_router(pdf_router)
+app.include_router(jpeg_router)
 
 # Mount static web UI files
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -39,6 +40,10 @@ if os.path.exists(static_dir):
 
 
 @app.get("/")
+@app.get("/pdf")
+@app.get("/pdf-editor")
+@app.get("/jpeg")
+@app.get("/jpeg-editor")
 async def root():
     """Serves the primary web interface using HTMLResponse for serverless compatibility."""
     index_path = os.path.join(static_dir, "index.html")
@@ -49,7 +54,8 @@ async def root():
             return HTMLResponse(content=content)
         except Exception:
             pass
-    return {"message": "PDF Text-Field Editor API is online. Access /docs for API documentation."}
+    return {"message": "PDF & JPEG Text-Field Editor API is online. Access /docs for API documentation."}
+
 
 
 if __name__ == "__main__":

@@ -307,18 +307,22 @@ def test_smtp_connection(
     }
 
 
-def send_email_with_pdf_attachment(
+def send_email_with_attachment(
     to_email: str,
     subject: str,
     body_text: str,
-    attachment_pdf_path: str,
+    attachment_path: Optional[str] = None,
     smtp_host: Optional[str] = None,
     smtp_port: Optional[int] = None,
     sender_email: Optional[str] = None,
-    sender_password: Optional[str] = None
+    sender_password: Optional[str] = None,
+    attachment_pdf_path: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Sends an individual automated email with attached PDF to recipient using SMTP or HTTP Mail API."""
+    """Sends an individual automated email with attached document/image (PDF, JPEG, PNG) to recipient."""
     load_dotenv_if_exists()
+
+    if not attachment_path and attachment_pdf_path:
+        attachment_path = attachment_pdf_path
 
     if sender_email is None:
         sender_email = os.environ.get("SMTP_SENDER_EMAIL", "").strip()
@@ -329,7 +333,6 @@ def send_email_with_pdf_attachment(
         sender_password = os.environ.get("SMTP_SENDER_PASSWORD", "").strip()
     else:
         sender_password = sender_password.strip()
-
 
     if not smtp_host:
         smtp_host = os.environ.get("SMTP_HOST", "smtp.hostinger.com").strip()
@@ -352,7 +355,7 @@ def send_email_with_pdf_attachment(
 
     # Brevo HTTP API dispatch if API key supplied
     if sender_password.startswith("xkeysib-"):
-        return _send_via_brevo_api(sender_password, sender_email, to_email, subject, body_text, attachment_pdf_path)
+        return _send_via_brevo_api(sender_password, sender_email, to_email, subject, body_text, attachment_path)
 
     # Standard SMTP dispatch
     msg = MIMEMultipart()
@@ -361,9 +364,9 @@ def send_email_with_pdf_attachment(
     msg["Subject"] = subject
     msg.attach(MIMEText(body_text, "plain"))
 
-    if attachment_pdf_path and os.path.exists(attachment_pdf_path):
-        filename = os.path.basename(attachment_pdf_path)
-        with open(attachment_pdf_path, "rb") as f:
+    if attachment_path and os.path.exists(attachment_path):
+        filename = os.path.basename(attachment_path)
+        with open(attachment_path, "rb") as f:
             part = MIMEApplication(f.read(), Name=filename)
             part['Content-Disposition'] = f'attachment; filename="{filename}"'
             msg.attach(part)
@@ -397,6 +400,11 @@ def send_email_with_pdf_attachment(
         "error": last_err or f"SMTP Dispatch Error ({smtp_host})",
         "recipient": to_email
     }
+
+
+# Backward-compatibility alias for PDF sender
+send_email_with_pdf_attachment = send_email_with_attachment
+
 
 
 class SMTPBatchSender:

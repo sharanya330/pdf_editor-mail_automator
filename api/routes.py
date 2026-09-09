@@ -15,7 +15,10 @@ from pdf.ocr_editor import edit_scanned_pdf
 from pdf.validator import validate_pdf_edit
 from pdf.template_manager import register_template, get_template, load_templates
 from pdf.bulk_processor import process_bulk_pdf_edits, parse_data_file
-from pdf.email_sender import send_email_with_pdf_attachment, test_smtp_connection, load_dotenv_if_exists
+from pdf.email_sender import send_email_with_attachment, send_email_with_pdf_attachment, test_smtp_connection, load_dotenv_if_exists
+from jpeg.analyzer import analyze_jpeg
+from jpeg.editor import edit_jpeg
+from jpeg.bulk_processor import process_bulk_jpeg_edits
 
 load_dotenv_if_exists()
 
@@ -23,6 +26,8 @@ import tempfile
 import threading
 
 router = APIRouter(prefix="/pdf", tags=["PDF Engine"])
+jpeg_router = APIRouter(prefix="/jpeg", tags=["JPEG Engine"])
+
 
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "pdf_editor_temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
@@ -463,4 +468,223 @@ async def api_list_templates():
 async def api_register_template(template_id: str, fields: Dict[str, Any]):
     """Registers a new PDF template configuration."""
     return register_template(template_id, fields)
+
+
+# ==========================================
+# JPEG EDITOR ROUTE HANDLERS
+# ==========================================
+
+@jpeg_router.post("/analyze")
+async def api_analyze_jpeg(file: UploadFile = File(...)) -> Dict[str, Any]:
+    """Analyzes uploaded JPEG image to detect text bounding boxes, colors, and free-space candidate areas."""
+    temp_id = str(uuid.uuid4())
+    ext = ".jpg"
+    if file.filename and file.filename.lower().endswith(".png"):
+        ext = ".png"
+
+    input_path = os.path.join(TEMP_DIR, f"jpeg_analyze_{temp_id}{ext}")
+    try:
+        content = await file.read()
+        with open(input_path, "wb") as f:
+            f.write(content)
+
+        res = analyze_jpeg(input_path)
+        return res
+    finally:
+        cleanup_file(input_path)
+
+
+@jpeg_router.post("/edit")
+async def api_edit_jpeg(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    replacements_json: Optional[str] = Form(None),
+    insertions_json: Optional[str] = Form(None),
+    send_email: bool = Form(False),
+    recipient_email: Optional[str] = Form(None),
+    email_subject: Optional[str] = Form("Your Edited Document"),
+    email_body: Optional[str] = Form("Hello,\n\nPlease find attached your customized document.\n\nBest Regards,"),
+    smtp_json: Optional[str] = Form(None)
+) -> Dict[str, Any]:
+    """Edits text regions and inserts free-space text values into an uploaded JPEG image with optional email delivery."""
+    temp_id = str(uuid.uuid4())
+    ext = ".jpg"
+    if file.filename and file.filename.lower().endswith(".png"):
+        ext = ".png"
+
+    input_path = os.path.join(TEMP_DIR, f"jpeg_in_{temp_id}{ext}")
+    output_filename = f"edited_jpeg_{temp_id[:8]}{ext}"
+    output_path = os.path.join(TEMP_DIR, output_filename)
+
+    try:
+        content = await file.read()
+        with open(input_path, "wb") as f:
+            f.write(content)
+
+        replacements = json.loads(replacements_json) if replacements_json else []
+        insertions = json.loads(insertions_json) if insertions_json else []
+
+        edit_res = edit_jpeg(input_path, output_path, replacements=replacements, insertions=insertions)
+        if not edit_res.get("success"):
+            raise HTTPException(status_code=500, detail=edit_res.get("error", "JPEG edit failed."))
+
+        email_status = None
+        if send_email:
+            if not recipient_email or "@" not in recipient_email:
+                email_status = {
+                    "success": False,
+                    "error": "Invalid or missing recipient email address.",
+                    "recipient": recipient_email or ""
+                }
+            else:
+                smtp_cfg = json.loads(smtp_json) if smtp_json else {}
+                sender_email = (smtp_cfg.get("sender_email") or "").strip() or None
+                sender_password = (smtp_cfg.get("sender_password") or "").strip() or None
+                host = (smtp_cfg.get("host") or "").strip() or None
+                port_raw = smtp_cfg.get("port", 0)
+                try:
+                    port = int(port_raw) if port_raw else None
+                except Exception:
+                    port = None
+
+                email_status = send_email_with_attachment(
+                    to_email=recipient_email.strip(),
+                    subject=email_subject or "Your Edited Document",
+                    body_text=email_body or "Please find attached your customized document.",
+                    attachment_path=output_path,
+                    smtp_host=host,
+                    smtp_port=port,
+                    sender_email=sender_email,
+                    sender_password=sender_password
+                )
+
+        background_tasks.add_task(cleanup_file, input_path)
+
+        return {
+            "success": True,
+            "output_file": output_filename,
+            "download_url": f"/jpeg/download/{output_filename}",
+            "applied_replacements": edit_res.get("applied_replacements", 0),
+            "applied_insertions": edit_res.get("applied_insertions", 0),
+            "email_status": email_status
+        }
+    except Exception as e:
+        cleanup_file(input_path)
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@jpeg_router.post("/edit-bulk")
+async def api_edit_jpeg_bulk(
+    jpeg_file: UploadFile = File(...),
+    data_file: UploadFile = File(...),
+    mappings_json: str = Form(...),
+    send_email: bool = Form(False),
+    email_column: Optional[str] = Form(None),
+    email_subject: Optional[str] = Form(None),
+    email_body: Optional[str] = Form(None),
+    smtp_json: Optional[str] = Form(None)
+) -> Dict[str, Any]:
+    """Bulk processes JPEG image template against Excel/CSV data rows in the background."""
+    bulk_id = str(uuid.uuid4())
+    jpeg_ext = ".jpg"
+    if jpeg_file.filename and jpeg_file.filename.lower().endswith(".png"):
+        jpeg_ext = ".png"
+
+    jpeg_temp_path = os.path.join(TEMP_DIR, f"bulk_template_{bulk_id}{jpeg_ext}")
+    data_ext = os.path.splitext(data_file.filename or "")[1] or ".xlsx"
+    data_temp_path = os.path.join(TEMP_DIR, f"bulk_data_{bulk_id}{data_ext}")
+    bulk_out_dir = os.path.join(TEMP_DIR, f"bulk_jpeg_out_{bulk_id}")
+
+    with open(jpeg_temp_path, "wb") as f:
+        f.write(await jpeg_file.read())
+
+    with open(data_temp_path, "wb") as f:
+        f.write(await data_file.read())
+
+    try:
+        mappings = json.loads(mappings_json)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid mappings_json format.")
+
+    smtp_config = json.loads(smtp_json) if smtp_json else None
+
+    _write_job(bulk_id, {"status": "processing", "job_id": bulk_id})
+
+    def _run_bulk_jpeg():
+        def _on_progress(prog_data: Dict[str, Any]):
+            _write_job(bulk_id, {
+                "status": "processing",
+                "job_id": bulk_id,
+                "current_row": prog_data.get("current_row", 0),
+                "total_rows": prog_data.get("total_rows", 0),
+                "progress_percent": prog_data.get("progress_percent", 0),
+                "status_step": prog_data.get("status_step", ""),
+                "next_step": prog_data.get("next_step", ""),
+                "sent_emails_count": prog_data.get("sent_emails_count", 0),
+                "failed_emails_count": prog_data.get("failed_emails_count", 0),
+                "generated_count": prog_data.get("generated_count", 0)
+            })
+
+        try:
+            res = process_bulk_jpeg_edits(
+                jpeg_template_path=jpeg_temp_path,
+                data_file_path=data_temp_path,
+                output_dir=bulk_out_dir,
+                mapping_config=mappings,
+                email_column_name=email_column if send_email else None,
+                email_subject=email_subject or "Your Document",
+                email_body=email_body or "Please find attached your customized document.",
+                smtp_config=smtp_config,
+                progress_callback=_on_progress
+            )
+
+            if not res.get("success"):
+                _write_job(bulk_id, {"status": "failed", "job_id": bulk_id, "error": res.get("message", "Bulk JPEG generation failed.")})
+                return
+
+            zip_filename = res.get("zip_file")
+            _write_job(bulk_id, {
+                "status": "done",
+                "job_id": bulk_id,
+                "zip_filename": zip_filename,
+                "download_url": f"/jpeg/download/{zip_filename}",
+                "total_rows": res.get("total_rows", 0),
+                "generated_count": res.get("generated_count", 0),
+                "sent_emails_count": res.get("sent_emails_count", 0),
+                "failed_emails_count": res.get("failed_emails_count", 0),
+                "errors": res.get("errors", [])
+            })
+        except Exception as e:
+            _write_job(bulk_id, {"status": "failed", "job_id": bulk_id, "error": str(e)})
+        finally:
+            cleanup_file(jpeg_temp_path)
+            cleanup_file(data_temp_path)
+
+    t = threading.Thread(target=_run_bulk_jpeg, daemon=True)
+    t.start()
+
+    return {"success": True, "status": "processing", "job_id": bulk_id, "poll_url": f"/jpeg/bulk-status/{bulk_id}"}
+
+
+@jpeg_router.get("/bulk-status/{job_id}")
+async def api_jpeg_bulk_status(job_id: str) -> Dict[str, Any]:
+    """Returns current status of a background bulk JPEG job."""
+    job = _read_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return job
+
+
+@jpeg_router.get("/download/{file_name}")
+async def api_download_jpeg(file_name: str):
+    """Serves modified JPEG file or ZIP archive for download."""
+    file_path = os.path.join(TEMP_DIR, file_name)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found.")
+
+    media_type = "application/zip" if file_name.endswith(".zip") else "image/jpeg"
+    return FileResponse(file_path, media_type=media_type, filename=file_name)
+
 

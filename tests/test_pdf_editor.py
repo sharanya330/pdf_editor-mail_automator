@@ -348,3 +348,33 @@ def test_CRITICAL_composite_pdf():
     assert post_analysis["total_pages"] == pre_analysis["total_pages"]
     assert post_analysis["total_images"] == pre_analysis["total_images"]
     assert post_analysis["total_drawings"] <= pre_analysis["total_drawings"] + len(plan["operations"]) * 2
+
+
+def test_single_pdf_edit_endpoint_with_email():
+    """Tests /pdf/edit endpoint with send_email enabled."""
+    import json
+    from fastapi.testclient import TestClient
+    from main import app
+
+    client = TestClient(app)
+    in_pdf = os.path.join(TEST_DIR, "test_api_single.pdf")
+    create_composite_pdf_with_assets(in_pdf)
+
+    with open(in_pdf, "rb") as f:
+        resp = client.post(
+            "/pdf/edit",
+            files={"file": ("test.pdf", f, "application/pdf")},
+            data={
+                "changes_json": json.dumps({"name": "Alice Cooper"}),
+                "send_email": "true",
+                "recipient_email": "alice@example.com",
+                "email_subject": "Your Offer Letter",
+                "email_body": "Here is your letter."
+            }
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is True
+    assert "email_status" in data
+    assert data["email_status"] is not None
+

@@ -588,3 +588,110 @@ input:checked + .slider:before {
         right: 0.25rem;
     }
 }
+
+/* Progress Bar & Live Activity List */
+.progress-badge {
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    color: white;
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.progress-track {
+    width: 100%;
+    height: 12px;
+    background-color: #1e293b;
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid var(--border-color);
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #6366f1, #a855f7, #ec4899);
+    border-radius: 6px;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 12px rgba(168, 85, 247, 0.5);
+}
+
+.live-activity-list {
+    max-height: 180px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding-right: 0.25rem;
+}
+
+.live-activity-item {
+    font-size: 0.82rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* JPEG Canvas & Interactive Coordinate Picker */
+.jpeg-canvas-container {
+    position: relative;
+    width: 100%;
+    max-height: 450px;
+    overflow: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #000;
+    margin-top: 1rem;
+    text-align: center;
+}
+
+.jpeg-canvas-container img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    cursor: crosshair;
+}
+
+.coord-picker-hint {
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid var(--primary);
+    color: #60a5fa;
+    font-size: 0.85rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.badge-purple {
+    background: linear-gradient(135deg, #a855f7, #ec4899);
+    color: white;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.ins-grid {
+    display: grid;
+    grid-template-columns: 80px 80px 1fr 90px 70px 38px;
+    gap: 0.4rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+@media (max-width: 768px) {
+    .ins-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+

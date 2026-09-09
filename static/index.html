@@ -26,12 +26,24 @@
                 </div>
             </div>
 
-            <!-- Mode Selector Tabs -->
+            <!-- Engine Selector Tabs -->
             <div class="mode-tabs">
-                <button id="tabSingle" class="tab-btn active">Single PDF Edit</button>
-                <button id="tabBulk" class="tab-btn">Bulk Excel/CSV Generation</button>
+                <a href="/" id="tabEnginePdf" class="tab-btn active" style="text-decoration: none; display: inline-flex; align-items: center;">📄 PDF Editor</a>
+                <a href="/jpeg" id="tabEngineJpeg" class="tab-btn" style="text-decoration: none; display: inline-flex; align-items: center;">🖼️ JPEG Editor</a>
             </div>
         </header>
+
+        <!-- Sub-Header Mode Selector for PDF/JPEG -->
+        <div id="pdfSubNav" class="mode-tabs mb-4" style="justify-content: center;">
+            <button id="tabSingle" class="tab-btn active">Single PDF Edit</button>
+            <button id="tabBulk" class="tab-btn">Bulk Excel/CSV Generation</button>
+        </div>
+
+        <div id="jpegSubNav" class="mode-tabs mb-4" style="display: none; justify-content: center;">
+            <button id="tabJpegSingle" class="tab-btn active">Single JPEG Editor</button>
+            <button id="tabJpegBulk" class="tab-btn">Bulk Excel/CSV JPEG Generation</button>
+        </div>
+
 
         <main class="main-content">
             <!-- Left Column: Upload & Form -->
@@ -92,6 +104,36 @@
                             <input type="text" id="nlInstruction" class="input-field" placeholder='e.g. "Change the name to Sairaj and duration to 1 Month"'>
                         </div>
 
+                        <div class="toggle-row mt-4 mb-2">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="singleSendEmailToggle">
+                                <span class="slider round"></span>
+                            </label>
+                            <div>
+                                <strong style="font-size: 1.05rem;">Send Edited PDF via Email</strong>
+                                <p class="subtitle mt-1">Automatically email the edited PDF directly to a specified recipient with custom subject & description</p>
+                            </div>
+                        </div>
+
+                        <div id="singleEmailConfigBox" style="display: none; margin-bottom: 1.25rem;" class="email-config-box">
+                            <div class="nl-input-group">
+                                <label for="singleEmailRecipient" class="form-label">Sent To (Recipient Email):</label>
+                                <input type="email" id="singleEmailRecipient" class="input-field" placeholder="Enter recipient email (e.g. receiver@example.com)">
+                            </div>
+                            <div class="nl-input-group mt-3">
+                                <label for="singleEmailSubject" class="form-label">Email Subject:</label>
+                                <input type="text" id="singleEmailSubject" class="input-field" value="Your Edited PDF Document">
+                            </div>
+                            <div class="nl-input-group mt-3">
+                                <label for="singleEmailBody" class="form-label">Add Description:</label>
+                                <textarea id="singleEmailBody" class="input-field" rows="3" placeholder="Add description / message for receiver...">Hello,
+
+Please find attached your customized PDF document.
+
+Best Regards,</textarea>
+                            </div>
+                        </div>
+
                         <button id="executeEditBtn" class="btn btn-primary btn-block">Execute Targeted Edit</button>
                     </div>
                 </div>
@@ -146,8 +188,9 @@
                             <span class="step-badge">Step 3</span>
                             <h2>Field-to-Excel Column Selection</h2>
                         </div>
-                        <p class="subtitle mb-3">Target PDF text fields to replace. Replacement values are automatically pulled from your Excel/CSV columns for each row:</p>
+                        <p class="subtitle mb-3">Type or select target PDF text fields to replace. Replacement values are automatically pulled from your Excel/CSV columns for each row:</p>
                         <div id="bulkMappingContainer" class="mapping-container"></div>
+                        <datalist id="pdfDetectedDatalist"></datalist>
                         <button id="addBulkMapBtn" class="btn btn-small mt-3">+ Add Field-to-Column Mapping</button>
                     </div>
 
@@ -176,8 +219,8 @@
                                 <input type="text" id="emailSubjectInput" class="input-field" value="Your Internship Offer Letter - Algoryx Systems">
                             </div>
                             <div class="nl-input-group mt-3">
-                                <label for="emailBodyInput" class="form-label">Email Message Body:</label>
-                                <textarea id="emailBodyInput" class="input-field" rows="4">Dear Candidate,
+                                <label for="emailBodyInput" class="form-label">Add Description:</label>
+                                <textarea id="emailBodyInput" class="input-field" rows="4" placeholder="Add description / message text sent to all receivers...">Dear Candidate,
 
 Congratulations! Please find attached your official Internship Offer Letter PDF.
 
@@ -218,7 +261,7 @@ HR Team, Algoryx Systems</textarea>
                                 <p class="subtitle smtp-hint mt-2">
                                     <strong>Hostinger:</strong> Host = <code>smtp.hostinger.com</code>, Port = <code>465</code> (or 587), Password = <strong>Hostinger Webmail Password</strong>.<br>
                                     <strong>Gmail:</strong> Host = <code>smtp.gmail.com</code>, Port = <code>587</code>, Password = <strong>16-character Google App Password</strong> (not normal password).<br>
-                                    <strong>Cloud Deployment (HTTPS Port 443):</strong> Paste your <strong>Resend API Key</strong> (<code>re_...</code>), <strong>Brevo Key</strong> (<code>xkeysib-...</code>), or <strong>SendGrid Key</strong> (<code>SG...</code>) as Password for 100% cloud email dispatch without SMTP port firewall blocks.
+                                    <strong>Cloud Deployment (HTTPS Port 443):</strong> Paste your <strong>Brevo Key</strong> (<code>xkeysib-...</code>) as Password for 100% cloud email dispatch without SMTP port firewall blocks.
                                 </p>
                             </div>
                         </div>
@@ -229,6 +272,185 @@ HR Team, Algoryx Systems</textarea>
                         <button id="executeBulkBtn" class="btn btn-primary btn-block btn-lg">Generate Bulk PDFs (ZIP)</button>
                     </div>
                 </div>
+
+                <!-- ================= MODE 3: SINGLE JPEG EDITOR ================= -->
+                <div id="modeJpegSingleSection" style="display: none;">
+                    <h2>1. Upload JPEG Image Template</h2>
+                    <div class="drop-zone" id="dropZoneJpegSingle">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                            <polyline points="21 15 16 10 5 21"></polyline>
+                        </svg>
+                        <p>Drag & Drop your JPEG/PNG image here</p>
+                        <span class="or-badge">OR</span>
+                        <label class="btn btn-secondary">
+                            Browse JPEG Image
+                            <input type="file" id="jpegFileInput" accept="image/jpeg,image/png" hidden>
+                        </label>
+                        <p id="jpegFileInfo" class="file-name-display"></p>
+                    </div>
+
+                    <!-- Interactive Image Coordinate Picker Canvas -->
+                    <div id="jpegCanvasWrapper" class="jpeg-canvas-container" style="display: none;">
+                        <img id="jpegPreviewImg" alt="JPEG Preview">
+                    </div>
+                    <div id="coordPickerHint" class="coord-picker-hint" style="display: none;">
+                        <span>🎯 <strong>Interactive Free-Space Picker:</strong> Click anywhere on the image above to auto-fill (X, Y) coordinates for new text insertion!</span>
+                        <span id="coordBadge" class="badge-purple">X: -, Y: -</span>
+                    </div>
+
+                    <div class="changes-section" id="jpegChangesSection">
+                        <h2>2. Target Text Replacements</h2>
+                        <div id="jpegReplacementsContainer">
+                            <div class="field-row">
+                                <input type="text" class="input-field key-input jpeg-target-input" placeholder="Existing text in JPEG to replace">
+                                <input type="text" class="input-field val-input jpeg-val-input" placeholder="New replacement value">
+                                <button class="btn-icon remove-row-btn">&times;</button>
+                            </div>
+                        </div>
+                        <button id="addJpegRepBtn" class="btn btn-small">+ Add Text Replacement</button>
+
+                        <h2 class="mt-4">3. Insert New Values into Free Spaces</h2>
+                        <p class="subtitle mb-2">Insert text at specific (X, Y) coordinates with auto-detected surrounding font size/color:</p>
+                        <div id="jpegInsertionsContainer">
+                            <div class="ins-grid">
+                                <input type="number" class="input-field ins-x" placeholder="X px">
+                                <input type="number" class="input-field ins-y" placeholder="Y px">
+                                <input type="text" class="input-field ins-text" placeholder="Value to insert into free space">
+                                <input type="number" class="input-field ins-size" placeholder="Size (auto)">
+                                <input type="color" class="input-field ins-color" value="#000000" style="padding: 2px;">
+                                <button class="btn-icon remove-row-btn">&times;</button>
+                            </div>
+                        </div>
+                        <button id="addJpegInsBtn" class="btn btn-small">+ Add Free-Space Insertion</button>
+
+                        <!-- Single JPEG Email Dispatch -->
+                        <div class="toggle-row mt-4 mb-2">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="jpegSingleSendEmailToggle">
+                                <span class="slider round"></span>
+                            </label>
+                            <div>
+                                <strong style="font-size: 1.05rem;">Send Edited JPEG via Email</strong>
+                                <p class="subtitle mt-1">Automatically email the customized JPEG image to candidate</p>
+                            </div>
+                        </div>
+
+                        <div id="jpegSingleEmailConfigBox" style="display: none; margin-bottom: 1.25rem;" class="email-config-box">
+                            <div class="nl-input-group">
+                                <label for="jpegSingleEmailRecipient" class="form-label">Sent To (Recipient Email):</label>
+                                <input type="email" id="jpegSingleEmailRecipient" class="input-field" placeholder="candidate@example.com">
+                            </div>
+                            <div class="nl-input-group mt-3">
+                                <label for="jpegSingleEmailSubject" class="form-label">Email Subject:</label>
+                                <input type="text" id="jpegSingleEmailSubject" class="input-field" value="Your Custom Document">
+                            </div>
+                            <div class="nl-input-group mt-3">
+                                <label for="jpegSingleEmailBody" class="form-label">Add Description:</label>
+                                <textarea id="jpegSingleEmailBody" class="input-field" rows="3" placeholder="Add description / message...">Hello,
+
+Please find attached your customized JPEG document.
+
+Best Regards,</textarea>
+                            </div>
+                        </div>
+
+                        <button id="executeJpegEditBtn" class="btn btn-primary btn-block mt-4">Execute Targeted JPEG Edit</button>
+                    </div>
+                </div>
+
+                <!-- ================= MODE 4: BULK JPEG EXCEL/CSV ================= -->
+                <div id="modeJpegBulkSection" style="display: none;">
+                    <div class="step-card">
+                        <div class="step-header">
+                            <span class="step-badge">Step 1</span>
+                            <h2>Upload Base JPEG Image Template</h2>
+                        </div>
+                        <div class="drop-zone" id="dropZoneJpegBulkTemplate">
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                <polyline points="21 15 16 10 5 21"></polyline>
+                            </svg>
+                            <p class="drop-title">Upload base JPEG offer letter template</p>
+                            <label class="btn btn-secondary mt-3">
+                                Select Template JPEG
+                                <input type="file" id="jpegBulkTemplateInput" accept="image/jpeg,image/png" hidden>
+                            </label>
+                            <p id="jpegBulkTemplateInfo" class="file-name-display mt-2"></p>
+                        </div>
+                    </div>
+
+                    <div class="step-card mt-4">
+                        <div class="step-header">
+                            <span class="step-badge">Step 2</span>
+                            <h2>Upload Excel / CSV File</h2>
+                        </div>
+                        <div class="drop-zone" id="dropZoneJpegBulkData">
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                            </svg>
+                            <p class="drop-title">Upload Excel (.xlsx) or CSV (.csv) containing row values</p>
+                            <label class="btn btn-secondary mt-3">
+                                Select Excel/CSV File
+                                <input type="file" id="jpegBulkDataInput" accept=".csv,.xlsx,.xls" hidden>
+                            </label>
+                            <p id="jpegBulkDataInfo" class="file-name-display mt-2"></p>
+                        </div>
+                    </div>
+
+                    <div class="step-card mt-4" id="jpegBulkMappingSection">
+                        <div class="step-header">
+                            <span class="step-badge">Step 3</span>
+                            <h2>Field & Free-Space Mapping</h2>
+                        </div>
+                        <p class="subtitle mb-3">Map Excel/CSV columns to target replacement text OR free-space coordinates (X, Y):</p>
+                        <div id="jpegBulkMappingContainer" class="mapping-container"></div>
+                        <button id="addJpegBulkMapBtn" class="btn btn-small mt-3">+ Add Field-to-Column Mapping</button>
+                    </div>
+
+                    <!-- Step 4 Card: Bulk JPEG Email Dispatch -->
+                    <div class="step-card mt-4" id="jpegEmailDispatchSection">
+                        <div class="toggle-row">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="jpegSendEmailToggle">
+                                <span class="slider round"></span>
+                            </label>
+                            <div>
+                                <strong style="font-size: 1.05rem;">Send Individual Automated Emails</strong>
+                                <p class="subtitle mt-1">Automatically email each generated JPEG document directly to candidate email addresses</p>
+                            </div>
+                        </div>
+
+                        <div id="jpegEmailConfigBox" style="display: none; margin-top: 1.5rem;" class="email-config-box">
+                            <div class="nl-input-group">
+                                <label for="jpegEmailColSelect" class="form-label">Select Recipient Email Column from Excel/CSV:</label>
+                                <select id="jpegEmailColSelect" class="input-field">
+                                    <option value="">-- Upload Excel/CSV File First --</option>
+                                </select>
+                            </div>
+                            <div class="nl-input-group mt-3">
+                                <label for="jpegEmailSubjectInput" class="form-label">Email Subject:</label>
+                                <input type="text" id="jpegEmailSubjectInput" class="input-field" value="Your Custom Document">
+                            </div>
+                            <div class="nl-input-group mt-3">
+                                <label for="jpegEmailBodyInput" class="form-label">Add Description:</label>
+                                <textarea id="jpegEmailBodyInput" class="input-field" rows="4" placeholder="Add description / message text sent to all receivers...">Dear Candidate,
+
+Please find attached your customized JPEG document.
+
+Best Regards,</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-bar mt-5">
+                        <button id="executeJpegBulkBtn" class="btn btn-primary btn-block btn-lg">Generate Bulk JPEGs & Send Emails</button>
+                    </div>
+                </div>
+
             </section>
 
             <!-- Right Column: Status & Results -->
@@ -264,6 +486,27 @@ HR Team, Algoryx Systems</textarea>
                     <a id="downloadBtn" href="#" target="_blank" class="btn btn-success btn-block mt-4">
                         Download Edited PDF
                     </a>
+                </div>
+
+                <!-- Live Bulk Progress Loading Bar Box -->
+                <div id="bulkProgressContainer" class="validation-box" style="display: none;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                        <h3 style="margin: 0; font-size: 1.1rem; color: #f8fafc;">⚡ Live Processing Progress</h3>
+                        <span id="bulkProgressPercentBadge" class="progress-badge">0%</span>
+                    </div>
+
+                    <p id="bulkStepText" style="font-weight: 500; font-size: 0.95rem; color: #60a5fa; margin-bottom: 0.5rem;">Initializing job...</p>
+
+                    <div class="progress-track">
+                        <div id="bulkProgressBarFill" class="progress-fill" style="width: 0%;"></div>
+                    </div>
+
+                    <div style="margin-top: 0.75rem; display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; color: #94a3b8;">
+                        <span>Next step: <strong id="bulkNextStepText" style="color: #cbd5e1;">Reading Excel data...</strong></span>
+                        <span id="bulkItemsCountText">0 / 0 items</span>
+                    </div>
+
+                    <div id="bulkLiveActivityList" class="live-activity-list mt-3"></div>
                 </div>
 
                 <!-- Bulk Output Box -->
