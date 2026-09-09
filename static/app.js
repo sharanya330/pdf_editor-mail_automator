@@ -1033,8 +1033,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const jpegBulkDataInput = document.getElementById('jpegBulkDataInput');
     const jpegBulkDataInfo = document.getElementById('jpegBulkDataInfo');
-    const jpegBulkMappingContainer = document.getElementById('jpegBulkMappingContainer');
-    const addJpegBulkMapBtn = document.getElementById('addJpegBulkMapBtn');
 
     const jpegBulkInsertionsContainer = document.getElementById('jpegBulkInsertionsContainer');
     const addJpegBulkInsBtn = document.getElementById('addJpegBulkInsBtn');
@@ -1132,27 +1130,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function createJpegBulkMapRow(field = '', col = '') {
-        if (!jpegBulkMappingContainer) return;
-        const row = document.createElement('div');
-        row.className = 'field-row align-center';
-
-        let colOptions = availableColumns.length === 0
-            ? `<option value="">-- Upload Excel/CSV File First --</option>`
-            : `<option value="">-- Select Excel Column --</option>` + availableColumns.map(c => `<option value="${c}" ${c === col ? 'selected' : ''}>${c}</option>`).join('');
-
-        row.innerHTML = `
-            <input type="text" class="input-field jpeg-bulk-field" placeholder="Target Field in JPEG (e.g. Name, Date)" value="${field}">
-            <span class="mapping-arrow">➔</span>
-            <select class="input-field jpeg-bulk-col">
-                ${colOptions}
-            </select>
-            <button class="btn-icon remove-row-btn">&times;</button>
-        `;
-        row.querySelector('.remove-row-btn').addEventListener('click', () => row.remove());
-        jpegBulkMappingContainer.appendChild(row);
-    }
-
     function createJpegBulkInsRow(x = '', y = '', col = '', size = '', color = '#000000') {
         if (!jpegBulkInsertionsContainer) return;
         const row = document.createElement('div');
@@ -1189,19 +1166,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 sel.value = currentVal;
             }
         });
-
-        if (jpegBulkMappingContainer) {
-            jpegBulkMappingContainer.querySelectorAll('.jpeg-bulk-col').forEach(sel => {
-                const currentVal = sel.value;
-                sel.innerHTML = optionsHtml;
-                if (currentVal && availableColumns.includes(currentVal)) {
-                    sel.value = currentVal;
-                }
-            });
-        }
     }
 
-    if (addJpegBulkMapBtn) addJpegBulkMapBtn.addEventListener('click', () => createJpegBulkMapRow());
     if (addJpegBulkInsBtn) addJpegBulkInsBtn.addEventListener('click', () => createJpegBulkInsRow());
 
     if (executeJpegBulkBtn) {
@@ -1216,20 +1182,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const mappings = [];
-            if (jpegBulkMappingContainer) {
-                jpegBulkMappingContainer.querySelectorAll('.field-row').forEach(r => {
-                    const targetVal = r.querySelector('.jpeg-bulk-field').value.trim();
-                    const colVal = r.querySelector('.jpeg-bulk-col').value.trim();
-
-                    if (targetVal && colVal) {
-                        mappings.push({
-                            field: targetVal,
-                            excel_column: colVal,
-                            is_free_space: false
-                        });
-                    }
-                });
-            }
 
             if (jpegBulkInsertionsContainer) {
                 jpegBulkInsertionsContainer.querySelectorAll('.ins-grid').forEach(r => {
@@ -1253,7 +1205,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (mappings.length === 0) {
-                alert('Please specify at least one text replacement mapping or free-space insertion.');
+                alert('Please specify at least one free-space insertion.');
                 return;
             }
 
