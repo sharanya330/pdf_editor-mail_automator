@@ -127,6 +127,8 @@ def test_bulk_jpeg_processor(tmp_path):
     assert res["generated_count"] == 2
     assert "zip_file" in res
     assert os.path.exists(os.path.join(str(out_dir), res["zip_file"]))
+    assert os.path.exists(os.path.join(str(out_dir), "Bob Miller.jpeg"))
+    assert os.path.exists(os.path.join(str(out_dir), "Carol White.jpeg"))
 
 
 def test_bulk_jpeg_email_preflight_missing_column(tmp_path):

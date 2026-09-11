@@ -13,7 +13,7 @@ import uuid
 import json
 from jpeg.editor import edit_jpeg
 from pdf.email_sender import SMTPBatchSender, load_dotenv_if_exists
-from pdf.bulk_processor import parse_data_file, _find_col_case_insensitive
+from pdf.bulk_processor import parse_data_file, _find_col_case_insensitive, sanitize_filename
 
 load_dotenv_if_exists()
 
@@ -126,6 +126,7 @@ def process_bulk_jpeg_edits(
     notify_progress(0, "Initializing bulk JPEG generation...", "Processing row 1 data...")
 
     processed_files: List[str] = []
+    used_filenames: set = set()
     sent_emails_count = 0
     failed_emails_count = 0
     errors: List[str] = []
@@ -164,10 +165,37 @@ def process_bulk_jpeg_edits(
                             "box": map_item.get("box")
                         })
 
-            # Create file name based on candidate name or index
-            cand_name = str(_find_col_case_insensitive(row, "Name") or _find_col_case_insensitive(row, "Full_Name") or _find_col_case_insensitive(row, "Candidate_Name") or f"candidate_{idx}").strip()
-            safe_name = "".join(c for c in cand_name if c.isalnum() or c in (" ", "_", "-")).replace(" ", "_")
-            out_filename = f"edited_{safe_name}_{idx}.jpg"
+            # Create file name based on candidate name or fallback column / index
+            cand_name_val = None
+            for col_key in ["Name", "NAME", "name", "Full_Name", "Full Name", "Candidate_Name", "Candidate Name"]:
+                cand_name_val = _find_col_case_insensitive(row, col_key)
+                if cand_name_val and str(cand_name_val).strip():
+                    break
+
+            if not cand_name_val or not str(cand_name_val).strip():
+                for k, v in row.items():
+                    if "name" in str(k).lower() and v and str(v).strip():
+                        cand_name_val = str(v).strip()
+                        break
+
+            raw_cand_name = str(cand_name_val or f"candidate_{idx}").strip()
+
+            # Remove extension if already present in raw candidate name
+            clean_name = raw_cand_name
+            for ext in [".jpeg", ".jpg", ".png", ".JPEG", ".JPG", ".PNG"]:
+                if clean_name.endswith(ext):
+                    clean_name = clean_name[:-len(ext)].strip()
+                    break
+
+            safe_basename = sanitize_filename(clean_name)
+            if not safe_basename or safe_basename == "document":
+                safe_basename = f"candidate_{idx}"
+
+            out_filename = f"{safe_basename}.jpeg"
+            if out_filename in used_filenames:
+                out_filename = f"{safe_basename}_{idx}.jpeg"
+            used_filenames.add(out_filename)
+
             out_filepath = os.path.join(output_dir, out_filename)
 
             edit_res = edit_jpeg(jpeg_template_path, out_filepath, replacements=replacements, insertions=insertions)
